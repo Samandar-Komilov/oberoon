@@ -1,7 +1,4 @@
-from wsgiref.simple_server import make_server
-
-
-def sample_app(environ, start_response):
+def app(environ, start_response):
     status = "200 OK"
     headers = [("Content-type", "text/plain")]
     start_response(status, headers)
@@ -9,5 +6,4 @@ def sample_app(environ, start_response):
     return [b'Hello World']
 
 
-server = make_server("localhost", 8000, sample_app)
-server.serve_forever()
+# gunicorn main:app - running wsgi server using gunicorn
