@@ -1,4 +1,5 @@
 from webob import Request, Response
+from parse import parse
 
 
 class Oberoon:
@@ -12,9 +13,9 @@ class Oberoon:
     
     def handle_request(self, request):
         response = Response()
-        handler = self.find_handler(request)
+        handler, kwargs = self.find_handler(request)
         if handler:
-            handler(request, response)
+            handler(request, response, **kwargs)
         else:
             self.default_response(response)
 
@@ -22,8 +23,13 @@ class Oberoon:
     
     def find_handler(self, request):
         for path, handler in self.routes.items():
-            if path == request.path:
-                return handler
+            # parse("It's {}, I love it!", "It's spam, I love it!")
+            result_parse = parse(path, request.path)
+            if result_parse:
+                # named method returns dictionary instead of Result object
+                return handler, result_parse.named
+            
+        return None, None
 
     def default_response(self, response):
         response.status_code = 404
