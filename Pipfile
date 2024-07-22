@@ -5,6 +5,9 @@ name = "pypi"
 
 [packages]
 gunicorn = "*"
+webob = "*"
+starlette = "*"
+uvicorn = "*"
 
 [dev-packages]
 
