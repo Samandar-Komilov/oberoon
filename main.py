@@ -40,3 +40,13 @@ def template(req, resp):
         "home.html",
         context = {"new_title": "Best Title", "new_body": "Best Body"}
     ).encode()
+
+
+def on_exception(req, resp, exc):
+    resp.text = str(exc)
+
+app.add_exception_handler(on_exception)
+
+@app.route("/exception")
+def exception_throwing_handler(req, resp):
+    raise AttributeError("Some exception")

@@ -14,6 +14,7 @@ class Oberoon:
         self.template_env = Environment(
             loader=FileSystemLoader(os.path.abspath(templates_dir))
         )
+        self.exception_handler = None
 
     def __call__(self, environ, start_response, *args, **kwargs):
         request = Request(environ)
@@ -22,6 +23,7 @@ class Oberoon:
     
     def handle_request(self, request):
         response = Response()
+        
         handler, kwargs = self.find_handler(request)
 
         if handler:
@@ -33,7 +35,13 @@ class Oberoon:
                     return response
                 handler_method(request, response, **kwargs)
             else:
-                handler(request, response, **kwargs)
+                try:
+                    handler(request, response, **kwargs)
+                except Exception as e:
+                    if self.exception_handler:
+                        self.exception_handler(request, response, e)
+                    else:
+                        raise e
         else:
             self.default_response(response)
 
@@ -42,9 +50,7 @@ class Oberoon:
     def find_handler(self, request):
         for path, handler in self.routes.items():
             # parse("It's {}, I love it!", "It's spam, I love it!")
-            print(path, request.path)
             result_parse = parse(path, request.path)
-            print(result_parse)
             if result_parse:
                 # named method returns dictionary instead of Result object
                 return handler, result_parse.named
@@ -73,3 +79,6 @@ class Oberoon:
 
     def template(self, template_name, context={}):
         return self.template_env.get_template(template_name).render(**context)
+
+    def add_exception_handler(self, handler):
+        self.exception_handler = handler
