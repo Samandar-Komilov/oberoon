@@ -3,11 +3,17 @@ from parse import parse
 import inspect
 import wsgiadapter
 import requests
+from jinja2 import Environment, FileSystemLoader
+import os
 
 
 class Oberoon:
-    def __init__(self):
+    def __init__(self, templates_dir="templates"):
         self.routes = dict()
+
+        self.template_env = Environment(
+            loader=FileSystemLoader(os.path.abspath(templates_dir))
+        )
 
     def __call__(self, environ, start_response, *args, **kwargs):
         request = Request(environ)
@@ -64,3 +70,6 @@ class Oberoon:
         session = requests.Session()
         session.mount('http://testserver', wsgiadapter.WSGIAdapter(self))
         return session
+
+    def template(self, template_name, context={}):
+        return self.template_env.get_template(template_name).render(**context)

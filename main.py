@@ -32,3 +32,11 @@ def new_handler(request, response):
     response.text = "From new handler"
 
 app.add_route("/new-handler", new_handler)
+
+
+@app.route("/template")
+def template(req, resp):
+    resp.body = app.template(
+        "home.html",
+        context = {"new_title": "Best Title", "new_body": "Best Body"}
+    ).encode()

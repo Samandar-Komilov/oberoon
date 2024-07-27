@@ -12,6 +12,7 @@ parse = "*"
 pytest = "*"
 requests-wsgi-adapter = "*"
 pytest-cov = "*"
+jinja2 = "*"
 
 [dev-packages]
 
