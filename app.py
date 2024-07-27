@@ -49,11 +49,14 @@ class Oberoon:
         response.status_code = 404
         response.text = "Not found."
 
+    def add_route(self, path, handler):
+        assert path not in self.routes, "Duplicate route. Please change the URL."
+        self.routes[path] = handler
+
     def route(self, path):
-        assert path not in self.routes, f"Duplicate route {path}. Please change the URL."
 
         def wrapper(handler):
-            self.routes[path] = handler
+            self.add_route(path, handler)
             return handler
         return wrapper
 
