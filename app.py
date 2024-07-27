@@ -1,5 +1,8 @@
 from webob import Request, Response
 from parse import parse
+import inspect
+import wsgiadapter
+import requests
 
 
 class Oberoon:
@@ -14,8 +17,17 @@ class Oberoon:
     def handle_request(self, request):
         response = Response()
         handler, kwargs = self.find_handler(request)
+
         if handler:
-            handler(request, response, **kwargs)
+            if inspect.isclass(handler):
+                handler_method = getattr(handler(), request.method.lower(), None)
+                if handler_method is None:
+                    response.text = "Method Not Allowed."
+                    response.status_code = 405
+                    return response
+                handler_method(request, response, **kwargs)
+            else:
+                handler(request, response, **kwargs)
         else:
             self.default_response(response)
 
@@ -24,7 +36,9 @@ class Oberoon:
     def find_handler(self, request):
         for path, handler in self.routes.items():
             # parse("It's {}, I love it!", "It's spam, I love it!")
+            print(path, request.path)
             result_parse = parse(path, request.path)
+            print(result_parse)
             if result_parse:
                 # named method returns dictionary instead of Result object
                 return handler, result_parse.named
@@ -36,7 +50,14 @@ class Oberoon:
         response.text = "Not found."
 
     def route(self, path):
+        assert path not in self.routes, f"Duplicate route {path}. Please change the URL."
+
         def wrapper(handler):
             self.routes[path] = handler
             return handler
         return wrapper
+
+    def test_session(self):
+        session = requests.Session()
+        session.mount('http://testserver', wsgiadapter.WSGIAdapter(self))
+        return session

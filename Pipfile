@@ -9,6 +9,9 @@ webob = "*"
 starlette = "*"
 uvicorn = "*"
 parse = "*"
+pytest = "*"
+requests-wsgi-adapter = "*"
+pytest-cov = "*"
 
 [dev-packages]
 
