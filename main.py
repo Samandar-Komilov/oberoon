@@ -1,4 +1,5 @@
 from app import Oberoon
+from middleware import Middleware
 
 
 app = Oberoon()
@@ -53,3 +54,15 @@ def exception_throwing_handler(req, resp):
 
 
 # Static files support using Whitenoise - we'll use the /template endpoint, but only link static css to the html file
+
+
+# Middleware support
+
+class LoggingMiddleware(Middleware):
+    def process_request(self, request):
+        print("Before request: do something:", request.url)
+    
+    def process_response(self, request, response):
+        print("After response: do something:", request.url)
+
+app.add_middleware(LoggingMiddleware)
