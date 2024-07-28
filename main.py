@@ -66,3 +66,11 @@ class LoggingMiddleware(Middleware):
         print("After response: do something:", request.url)
 
 app.add_middleware(LoggingMiddleware)
+
+
+# Custom responses
+
+@app.route("/json")
+def json_handler(request, response):
+    response_data = {"name": "some name", "type": "json"}
+    response.json = response_data

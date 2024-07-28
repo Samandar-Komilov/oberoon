@@ -1,4 +1,4 @@
-from webob import Request, Response
+from webob import Request
 from parse import parse
 import inspect
 import wsgiadapter
@@ -8,6 +8,7 @@ import os
 from whitenoise import WhiteNoise
 
 from middleware import Middleware
+from response import Response
 
 
 class Oberoon:
