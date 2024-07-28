@@ -1,5 +1,5 @@
 import pytest
-from app import Oberoon
+from oberoon.app import Oberoon
 
 @pytest.fixture
 def app():

@@ -1,6 +1,6 @@
 from conftest import app, test_client
 import pytest
-from middleware import Middleware
+from oberoon.middleware import Middleware
 
 
 def test_basic_route_adding(app):

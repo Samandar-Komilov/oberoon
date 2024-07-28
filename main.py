@@ -1,5 +1,5 @@
-from app import Oberoon
-from middleware import Middleware
+from oberoon.app import Oberoon
+from oberoon.middleware import Middleware
 
 
 app = Oberoon()
