@@ -13,6 +13,7 @@ pytest = "*"
 requests-wsgi-adapter = "*"
 pytest-cov = "*"
 jinja2 = "*"
+whitenoise = "*"
 
 [dev-packages]
 

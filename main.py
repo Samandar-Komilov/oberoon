@@ -50,3 +50,6 @@ app.add_exception_handler(on_exception)
 @app.route("/exception")
 def exception_throwing_handler(req, resp):
     raise AttributeError("Some exception")
+
+
+# Static files support using Whitenoise - we'll use the /template endpoint, but only link static css to the html file
