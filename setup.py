@@ -18,7 +18,7 @@ URL = 'https://github.com/Samandar-Komilov/oberoon'
 EMAIL = 'komilov.samandar07@gmail.com'
 AUTHOR = 'Samandar Komilov'
 REQUIRES_PYTHON = '>=3.10.0'
-VERSION = '0.1.1'
+VERSION = '0.1.2'
 
 # What packages are required for this module to be executed?
 REQUIRED = [

@@ -1,6 +1,6 @@
 # Oberoon: Python Web Framework
 
-![Oberoon logo](./oberoon.png)
+![Oberoon framework logo](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/2l8tlofpzya247a3pils.png)
 
 ![purpose](https://img.shields.io/badge/purpose-learning-green)
 
