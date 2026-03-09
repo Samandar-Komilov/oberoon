@@ -1,4 +1,4 @@
-from conftest import app, test_client
+from tests.conftest import app, test_client
 import pytest
 from oberoon.middleware import Middleware
 
