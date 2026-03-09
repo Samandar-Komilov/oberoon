@@ -1,2 +1,2 @@
 [run]
-omit = venv/*, main.py, conftest.py, test_app.py
+omit = venv/*, main.py, tests/*
