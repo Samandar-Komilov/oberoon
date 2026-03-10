@@ -266,6 +266,87 @@ def route(self, path: str, methods: list[str] = None):
 
 ---
 
+## Phase 2.5 — HTTP Method Decorators
+
+**Goal:** Replace the generic `route()` decorator with FastAPI-style convenience decorators (`@app.get()`, `@app.post()`, etc.) and wire the router into `_handle_request` so user-defined handlers actually run.
+
+### Step 2.5.1 — Method shorthand decorators
+
+Add thin wrappers on `Oberoon` that delegate to `route()` with a fixed method:
+
+```python
+def get(self, path: str):
+    return self.route(path, methods=["GET"])
+
+def post(self, path: str):
+    return self.route(path, methods=["POST"])
+
+def put(self, path: str):
+    return self.route(path, methods=["PUT"])
+
+def patch(self, path: str):
+    return self.route(path, methods=["PATCH"])
+
+def delete(self, path: str):
+    return self.route(path, methods=["DELETE"])
+```
+
+Usage becomes identical to FastAPI:
+
+```python
+app = Oberoon()
+
+@app.get("/hello")
+async def hello(request: Request) -> Response:
+    response = Response()
+    response.set_body(b"Hello!", content_type="text/plain")
+    return response
+```
+
+### Step 2.5.2 — Connect the router in `_handle_request`
+
+Replace the static "Hello, world!" body with a real dispatch loop:
+
+```python
+async def _handle_request(self, request: Request, response: Response):
+    route, path_params = self._find_handler(request.method, request.path)
+    if route is None:
+        # check if path matched but method didn't -> 405, else 404
+        response.status_code = 404
+        response.set_body(b"Not Found", content_type="text/plain")
+        return
+    result = await route.handler(request)
+    if isinstance(result, Response):
+        # handler returned its own Response — copy it over
+        response.status_code = result.status_code
+        response.headers = result.headers
+        response._body = result._body
+```
+
+Key decisions at this step:
+- Handlers receive `request: Request` and return a `Response` object.
+- Path params are not yet injected here — that comes in Phase 5 (dependency injection). For now, a handler can read `request.path` or `request.query_string` directly if needed.
+- Returning a `Response` from the handler is the convention; the framework copies it onto the outgoing response, keeping `send()` centralised in `__call__`.
+
+### Step 2.5.3 — Test it
+
+```python
+async def test_get_hello(client):
+    r = await client.get("/hello")
+    assert r.status_code == 200
+    assert r.text == "Hello!"
+
+async def test_404(client):
+    r = await client.get("/nope")
+    assert r.status_code == 404
+
+async def test_405(client):
+    r = await client.post("/hello")
+    assert r.status_code == 405
+```
+
+---
+
 ## Phase 3 — WSGI Compatibility Bridge
 
 **Goal:** Accept a legacy WSGI callable and run it inside the async framework.
