@@ -17,3 +17,6 @@ dev = [
     "ty>=0.0.21",
     "uvicorn>=0.41.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
