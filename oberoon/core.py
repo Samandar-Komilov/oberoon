@@ -90,6 +90,8 @@ class Oberoon(RoutingMixin):
 
     async def find_handler(self, method: str, path: str):
         logger.warning("finding handler for: %s %s", method, path)
+        method_mismatch: bool = False
+
         for route in self._routes:
             logger.warning(
                 "checking route: %s %s -> %s",
@@ -101,7 +103,10 @@ class Oberoon(RoutingMixin):
             if match:
                 if method in route.methods:
                     return route, match.groupdict()
-                raise MethodNotAllowedException
+                method_mismatch = True
+
+        if method_mismatch:
+            raise MethodNotAllowedException
         raise NotFoundException
 
     async def handle_lifespan(self, receive, send):
