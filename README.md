@@ -1,105 +1,69 @@
-# Oberoon: Python Web Framework
-
-![Oberoon framework logo](https://dev-to-uploads.s3.amazonaws.com/uploads/articles/2l8tlofpzya247a3pils.png)
+# Oberoon
 
 ![purpose](https://img.shields.io/badge/purpose-learning-green)
-
 ![PyPI - Version](https://img.shields.io/pypi/v/oberoon)
 
-Oberoon is a WSGI framework for Python, written for mainly learning purposes. Can be used with any WSGI server such as Gunicorn. 
-
-Soon, the author is planning to release his own WSGI server - Obicorn, then you can easily integrate the framework with it.
+A lightweight ASGI web framework for Python, inspired by Starlette. Built from scratch as a learning project to understand the internals of modern async web frameworks.
 
 **Source code**: https://github.com/Samandar-Komilov/oberoon
+
+## Features
+
+- Pure ASGI interface — works with Uvicorn, Hypercorn, Daphne
+- Async request handlers
+- Path parameters with type conversion (`{id:int}`, `{name:str}`, `{filepath:path}`)
+- Method-based routing (`@app.get`, `@app.post`, etc.)
+- Attachable routers with prefix mounting (WIP)
+- Structured stdout logging
+- Zero magic — small codebase, easy to read and learn from
 
 ## Installation
 
 ```bash
-  pip install oberoon
+pip install oberoon
 ```
 
-## How to use it
-
-### Basic Usage
+## Quick Start
 
 ```python
-from oberoon.app import Oberoon
+from oberoon import Oberoon, Request, Response, setup_logging
 
+setup_logging()
 
 app = Oberoon()
 
 
-# Simple text response handlers
-@app.route("/home", allowed_methods=["get"])
-def home(request, response):
-    response.text = "Hello from the Home Page"
+@app.get("/hello")
+async def hello(request: Request) -> Response:
+    return Response(200, body=b"Hello!", content_type="text/plain")
 
 
-# Parametrized handlers
-@app.route("/hello/{name}")
-def greeting(request, response, name):
-    response.text = f"Hello {name}"
-
-
-# Class-based handlers
-@app.route("/books")
-class Books:
-    def get(self, request, response):
-        response.text = "Books page"
-    
-    def post(self, request, response):
-        response.text = "Endpoint to create a book\n"
-
-
-# Explicit addition of handlers
-def new_handler(request, response):
-    response.text = "From new handler"
-
-app.add_route("/new-handler", new_handler)
-
-
-# Templates support
-@app.route("/template")
-def template(req, resp):
-    resp.body = app.template(
-        "home.html",
-        context = {"new_title": "Best Title", "new_body": "Best Body"}
-    ).encode()
-
-
-# JSON response handlers
-@app.route("/json")
-def json_handler(request, response):
-    response_data = {"name": "some name", "type": "json"}
-    response.json = response_data
+@app.get("/users/{user_id:int}")
+async def get_user(request: Request, user_id: int) -> Response:
+    return Response(200, body=f"User {user_id}".encode(), content_type="text/plain")
 ```
 
-## Unit Tests
+Run with any ASGI server:
 
-The recommended way of writing unit tests is with [pytest](https://docs.pytest.org/en/stable/). Here is an example:
+```bash
+uvicorn app:app --reload
+```
 
-```python
-def test_basic_route_adding(app):
-    @app.route('/home')
-    def home(req, resp):
-        resp.text = "Hello from Home"
+## Roadmap
 
+- [x] ASGI core with lifespan support
+- [x] Regex-based routing with path parameter converters
+- [x] Structured logging
+- [ ] Attachable routers (`app.include_router`)
+- [ ] Middleware support
+- [ ] WebSocket support
+- [ ] Static files and templates
 
-def test_parametrized_routes(app, test_client):
-    @app.route("/hello/{name}")
-    def greeting(request, response, name):
-        response.text = f"Hello {name}"
+## Development
 
-    assert test_client.get("http://testserver/hello/Sam").text == "Hello Sam"
-
-
-def test_class_based_get(app, test_client):
-    @app.route("/books")
-    class Books:
-        def get(self, request, response):
-            response.text = "Books page"
-
-    response = test_client.get("http://testserver/books")
-    assert response.text == "Books page"
-    assert response.status_code == 200
+```bash
+git clone https://github.com/Samandar-Komilov/oberoon.git
+cd oberoon
+pip install -e ".[dev]"
+pytest tests/
 ```

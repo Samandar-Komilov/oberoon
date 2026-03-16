@@ -1,19 +1,4 @@
-from dataclasses import dataclass
 import re
-from typing import Callable
-
-from oberoon.logging import get_logger
-
-logger = get_logger("routing")
-
-
-@dataclass
-class Route:
-    pattern: re.Pattern
-    param_types: dict[str, type]
-    handler: Callable
-    methods: set[str]
-
 
 CONVERTERS = {
     "str": r"[^\s/]+",  # any char except space or slash
@@ -37,5 +22,4 @@ def compile_path(path: str) -> tuple[re.Pattern, dict[str, type]]:
 
     pattern = re.sub(r"\{([^}]+)\}", replace, path)
     compiled = re.compile(f"^{pattern}$")
-    logger.debug("compiled path: %s -> %s", path, compiled.pattern)
     return compiled, param_types

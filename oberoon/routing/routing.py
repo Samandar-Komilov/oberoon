@@ -1,0 +1,47 @@
+from oberoon.routing.dtos import RouteRecord
+from oberoon.logging import get_logger
+
+logger = get_logger("routing")
+
+
+class RoutingMixin:
+    def get(self, path: str):
+        return self.route(path, methods=["GET"])
+
+    def post(self, path: str):
+        return self.route(path, methods=["POST"])
+
+    def put(self, path: str):
+        return self.route(path, methods=["PUT"])
+
+    def patch(self, path: str):
+        return self.route(path, methods=["PATCH"])
+
+    def delete(self, path: str):
+        return self.route(path, methods=["DELETE"])
+
+
+class Router(RoutingMixin):
+    def __init__(self, prefix: str = ""):
+        self._prefix = prefix
+        self._route_records: list[RouteRecord] = []
+        self._subrouters: list[tuple[str, Router]] = []
+
+    def route(self, path: str, methods: list[str] | None = None):
+        def decorator(handler):
+            route_record = RouteRecord(
+                path=path,
+                handler=handler,
+                methods=methods or ["get"],
+            )
+            self._route_records.append(route_record)
+            logger.debug(
+                "route registered: %s %s -> %s", methods, path, handler.__name__
+            )
+            return handler
+
+        return decorator
+
+    @property
+    def prefix(self):
+        return self._prefix
