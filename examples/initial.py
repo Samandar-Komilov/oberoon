@@ -1,6 +1,6 @@
-from oberoon import Oberoon, Request, Response, setup_logging
+from oberoon import Oberoon, Request, Response
 
-setup_logging()
+from examples.routers import users_router
 
 app = Oberoon()
 
@@ -17,3 +17,6 @@ async def hello2(request: Request, id: int) -> Response:
     response = Response(200)
     response.set_body(b"Hello 1!", content_type="text/plain")
     return response
+
+
+app.include_router(users_router)
