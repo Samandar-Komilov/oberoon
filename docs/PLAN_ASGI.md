@@ -2,616 +2,209 @@
 
 ## Vision
 
-Rewrite Oberoon from the ground up as an ASGI-native framework. No Starlette, no FastAPI scaffolding. Every layer is written by hand so you understand exactly what is happening. WSGI apps are supported as a compatibility shim via `anyio.to_thread.run_sync()`.
+Oberoon is an ASGI-native web framework built from scratch. No Starlette, no FastAPI scaffolding. Every layer is written by hand for deep understanding of how modern async web frameworks work.
 
-Unique differentiators over existing frameworks:
+Differentiators:
 - `msgspec` for validation and serialization (faster than Pydantic v2, zero-copy JSON)
 - Dependency injection without a separate library
 - Auto OpenAPI schema generation from native type annotations
-- ASGI-first, WSGI via thread bridge
+- ASGI-first throughout
 
 ---
 
-## What ASGI Actually Is
+## Progress
 
-Before writing a line of code, understand the contract you are implementing.
-
-An ASGI application is a single async callable with this signature:
-
-```python
-async def app(scope: dict, receive: Callable, send: Callable) -> None:
-    ...
-```
-
-- **`scope`**: a dict describing the connection. `scope["type"]` is one of `"http"`, `"websocket"`, or `"lifespan"`. For HTTP: contains `method`, `path`, `query_string`, `headers`, etc. This is the already-parsed request metadata — the ASGI server (uvicorn, hypercorn) did the TCP/HTTP parsing before calling you.
-- **`receive`**: an async callable you call to pull messages from the client. For HTTP it yields `{"type": "http.request", "body": b"...", "more_body": False}`.
-- **`send`**: an async callable you call to push messages to the client. For HTTP: first call with `{"type": "http.response.start", "status": 200, "headers": [...]}`, then one or more calls with `{"type": "http.response.body", "body": b"...", "more_body": False}`.
-
-You do not call `h11` inside your framework. `h11` is what *uvicorn* uses to parse raw TCP bytes into ASGI messages before handing them to you. Knowing h11 helps you understand what uvicorn does internally — it is a reading exercise, not a direct dependency of your framework.
+| Phase | Status |
+|-------|--------|
+| 1. ASGI Core | Done |
+| 2. Routing + method decorators | Done |
+| 3. Attachable routers (recursive) | Done |
+| 4. msgspec integration | Next |
+| 5. Middleware | Planned |
+| 6. Dependency injection | Planned |
+| 7. OpenAPI generation | Planned |
+| 8. Templates + static files | Planned |
+| 9. WSGI bridge | Planned |
 
 ---
 
-## Dependency Changes
+## Phase 1 — ASGI Core (Done)
 
-### Remove entirely
-| Package | Why |
-|---------|-----|
-| `webob` | WSGI-only request/response objects |
-| `requests-wsgi-adapter` | WSGI-only test adapter, abandoned |
-| `requests` | Only present for the adapter |
-| `whitenoise` | WSGI static serving (may re-add ASGI version later) |
-| `parse` | URL parsing, replace with stdlib `re` |
+`Request`, `Response`, `Oberoon.__call__` with lifespan support. Handlers are async, return `Response` objects. Test client via `httpx.ASGITransport`.
 
-### Add
-| Package | Purpose |
-|---------|---------|
-| `anyio` | Async runtime abstraction (asyncio + trio), thread bridge for WSGI compat |
-| `msgspec` | Validation, serialization, schema introspection |
+## Phase 2 — Routing (Done)
 
-### Dev only
-| Package | Purpose |
-|---------|---------|
-| `uvicorn` | ASGI server for manual testing |
-| `httpx` | Test client via `httpx.ASGITransport` |
-| `anyio[trio]` | Run tests on both backends |
-| `pytest-anyio` | Async test support |
+Regex-based routing via `compile_path()`. Path parameters with type converters (`{id:int}`, `{name:str}`, `{filepath:path}`). Method decorators (`@app.get`, `@app.post`, etc.). Proper 404/405 distinction.
 
-### Keep
-| Package | Why |
-|---------|-----|
-| `jinja2` | Template rendering, still valid |
+## Phase 3 — Attachable Routers (Done)
 
----
-
-## Phase 0 — Preparation (do before any code)
-
-### Step 0.1 — Read first
-
-Before writing any code, read these in order. They are short:
-
-1. The ASGI spec itself: https://asgi.readthedocs.io/en/latest/specs/main.html (15 min)
-2. The HTTP connection scope spec: https://asgi.readthedocs.io/en/latest/specs/www.html (10 min)
-3. A minimal ASGI app written by hand — just 20 lines, teaches the entire protocol:
-   ```python
-   async def app(scope, receive, send):
-       assert scope["type"] == "http"
-       await receive()  # consume request body
-       await send({"type": "http.response.start", "status": 200,
-                   "headers": [[b"content-type", b"text/plain"]]})
-       await send({"type": "http.response.body", "body": b"hello"})
-   ```
-   Run this with `uvicorn app:app` and make a request. This is your foundation.
-
-### Step 0.2 — Strip the old code
-
-Delete `oberoon/app.py`, `oberoon/middleware.py`, `oberoon/response.py`. Keep `oberoon/__init__.py`. Update `pyproject.toml` deps as described above.
-
----
-
-## Phase 1 — The ASGI Core (~80 lines)
-
-**Goal:** A working ASGI callable that can receive a request and send a response. No routing yet.
-
-### Step 1.1 — `Request` class
-
-Parse the ASGI `scope` and `receive` into a usable object. Do not use `webob`. Do it yourself.
-
-```python
-class Request:
-    def __init__(self, scope: dict, receive: Callable):
-        self._scope = scope
-        self._receive = receive
-
-    @property
-    def method(self) -> str:
-        return self._scope["method"].upper()
-
-    @property
-    def path(self) -> str:
-        return self._scope["path"]
-
-    @property
-    def query_string(self) -> str:
-        return self._scope["query_string"].decode()
-
-    @property
-    def headers(self) -> dict[str, str]:
-        return {k.decode(): v.decode() for k, v in self._scope["headers"]}
-
-    async def body(self) -> bytes:
-        # ASGI body may arrive in multiple chunks
-        chunks = []
-        while True:
-            message = await self._receive()
-            chunks.append(message.get("body", b""))
-            if not message.get("more_body", False):
-                break
-        return b"".join(chunks)
-
-    async def json(self):
-        import msgspec.json
-        return msgspec.json.decode(await self.body())
-```
-
-Key insight: `body()` must loop because ASGI allows streaming bodies in multiple `http.request` messages.
-
-### Step 1.2 — `Response` class
-
-```python
-class Response:
-    def __init__(self):
-        self.status_code: int = 200
-        self.headers: dict[str, str] = {}
-        self._body: bytes = b""
-
-    def set_body(self, body: bytes, content_type: str):
-        self._body = body
-        self.headers["content-type"] = content_type
-
-    async def send(self, send: Callable) -> None:
-        encoded_headers = [
-            [k.encode(), v.encode()] for k, v in self.headers.items()
-        ]
-        await send({
-            "type": "http.response.start",
-            "status": self.status_code,
-            "headers": encoded_headers,
-        })
-        await send({
-            "type": "http.response.body",
-            "body": self._body,
-            "more_body": False,
-        })
-```
-
-Note: headers are `list[list[bytes]]` in ASGI, not a dict. Multiple headers with the same name are valid (e.g., `Set-Cookie`).
-
-### Step 1.3 — The `Oberoon` ASGI callable
-
-```python
-class Oberoon:
-    async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
-        if scope["type"] == "lifespan":
-            await self._handle_lifespan(receive, send)
-        elif scope["type"] == "http":
-            request = Request(scope, receive)
-            response = Response()
-            await self.handle_request(request, response)
-            await response.send(send)
-
-    async def _handle_lifespan(self, receive, send):
-        # ASGI lifespan: startup/shutdown events
-        while True:
-            message = await receive()
-            if message["type"] == "lifespan.startup":
-                await send({"type": "lifespan.startup.complete"})
-            elif message["type"] == "lifespan.shutdown":
-                await send({"type": "lifespan.shutdown.complete"})
-                return
-```
-
-The `lifespan` scope is for startup/shutdown hooks (database connections, etc.). Handling it is required for uvicorn compatibility even if you do nothing with it.
-
----
-
-## Phase 2 — Routing (~60 lines)
-
-**Goal:** Regex-based O(1)-per-match routing. No `parse` library.
-
-### Step 2.1 — Route compilation
-
-Convert path patterns like `/users/{user_id:int}` into named regex groups:
-
-```python
-import re
-
-CONVERTERS = {
-    "str": r"[^/]+",
-    "int": r"[0-9]+",
-    "path": r".+",
-}
-
-def compile_path(path: str) -> tuple[re.Pattern, dict[str, type]]:
-    """
-    "/users/{user_id:int}" -> (re.compile(r"^/users/(?P<user_id>[0-9]+)$"), {"user_id": int})
-    "/items/{name}"        -> (re.compile(r"^/items/(?P<name>[^/]+)$"), {"name": str})
-    """
-    param_types = {}
-    def replace(match):
-        name, _, converter = match.group(1).partition(":")
-        converter = converter or "str"
-        param_types[name] = int if converter == "int" else str
-        return f"(?P<{name}>{CONVERTERS[converter]})"
-    pattern = re.sub(r"\{([^}]+)\}", replace, path)
-    return re.compile(f"^{pattern}$"), param_types
-```
-
-This gives you typed path parameters for free, which feeds directly into schema generation later.
-
-### Step 2.2 — Route registry and lookup
-
-```python
-@dataclass
-class Route:
-    pattern: re.Pattern
-    param_types: dict[str, type]
-    handler: Callable
-    methods: set[str]
-
-def find_handler(self, method: str, path: str) -> tuple[Route | None, dict]:
-    for route in self._routes:
-        match = route.pattern.match(path)
-        if match:
-            if method not in route.methods:
-                return None, {}  # matched path, wrong method -> 405
-            return route, match.groupdict()
-    return None, {}  # no match -> 404
-```
-
-### Step 2.3 — `route()` decorator
-
-```python
-def route(self, path: str, methods: list[str] = None):
-    def decorator(handler):
-        pattern, param_types = compile_path(path)
-        self._routes.append(Route(
-            pattern=pattern,
-            param_types=param_types,
-            handler=handler,
-            methods={m.upper() for m in (methods or ["GET"])},
-        ))
-        return handler
-    return decorator
-```
-
----
-
-## Phase 2.5 — HTTP Method Decorators
-
-**Goal:** Replace the generic `route()` decorator with FastAPI-style convenience decorators (`@app.get()`, `@app.post()`, etc.) and wire the router into `_handle_request` so user-defined handlers actually run.
-
-### Step 2.5.1 — Method shorthand decorators
-
-Add thin wrappers on `Oberoon` that delegate to `route()` with a fixed method:
-
-```python
-def get(self, path: str):
-    return self.route(path, methods=["GET"])
-
-def post(self, path: str):
-    return self.route(path, methods=["POST"])
-
-def put(self, path: str):
-    return self.route(path, methods=["PUT"])
-
-def patch(self, path: str):
-    return self.route(path, methods=["PATCH"])
-
-def delete(self, path: str):
-    return self.route(path, methods=["DELETE"])
-```
-
-Usage becomes identical to FastAPI:
-
-```python
-app = Oberoon()
-
-@app.get("/hello")
-async def hello(request: Request) -> Response:
-    response = Response()
-    response.set_body(b"Hello!", content_type="text/plain")
-    return response
-```
-
-### Step 2.5.2 — Connect the router in `_handle_request`
-
-Replace the static "Hello, world!" body with a real dispatch loop:
-
-```python
-async def _handle_request(self, request: Request, response: Response):
-    route, path_params = self._find_handler(request.method, request.path)
-    if route is None:
-        # check if path matched but method didn't -> 405, else 404
-        response.status_code = 404
-        response.set_body(b"Not Found", content_type="text/plain")
-        return
-    result = await route.handler(request)
-    if isinstance(result, Response):
-        # handler returned its own Response — copy it over
-        response.status_code = result.status_code
-        response.headers = result.headers
-        response._body = result._body
-```
-
-Key decisions at this step:
-- Handlers receive `request: Request` and return a `Response` object.
-- Path params are not yet injected here — that comes in Phase 5 (dependency injection). For now, a handler can read `request.path` or `request.query_string` directly if needed.
-- Returning a `Response` from the handler is the convention; the framework copies it onto the outgoing response, keeping `send()` centralised in `__call__`.
-
-### Step 2.5.3 — Test it
-
-```python
-async def test_get_hello(client):
-    r = await client.get("/hello")
-    assert r.status_code == 200
-    assert r.text == "Hello!"
-
-async def test_404(client):
-    r = await client.get("/nope")
-    assert r.status_code == 404
-
-async def test_405(client):
-    r = await client.post("/hello")
-    assert r.status_code == 405
-```
-
----
-
-## Phase 3 — WSGI Compatibility Bridge
-
-**Goal:** Accept a legacy WSGI callable and run it inside the async framework.
-
-The bridge converts an ASGI call into a WSGI call run in a thread pool:
-
-```python
-import anyio
-
-class WSGIMiddleware:
-    def __init__(self, wsgi_app):
-        self._app = wsgi_app
-
-    async def __call__(self, scope, receive, send):
-        # Read entire body first (WSGI is synchronous and blocking)
-        body_chunks = []
-        message = await receive()
-        body_chunks.append(message.get("body", b""))
-        while message.get("more_body"):
-            message = await receive()
-            body_chunks.append(message.get("body", b""))
-        body = b"".join(body_chunks)
-
-        environ = build_environ(scope, body)  # convert ASGI scope -> WSGI environ
-        response_started = False
-        response_body = []
-
-        def start_response(status, headers, exc_info=None):
-            nonlocal response_started
-            response_started = True
-            # store for later send()
-            ...
-
-        # Run the blocking WSGI app in a thread
-        result = await anyio.to_thread.run_sync(
-            lambda: self._app(environ, start_response)
-        )
-        ...
-```
-
-Implementing `build_environ` teaches you exactly what WSGI expects — it maps ASGI scope fields to CGI-style environ keys (`REQUEST_METHOD`, `PATH_INFO`, `wsgi.input`, etc.).
+`Router` class with prefix mounting via `app.include_router(router)`. Recursive DFS flattening for nested routers. `RoutingMixin` shared between `Oberoon` and `Router`. Deferred compilation — routes compile at mount time when the full prefix is known.
 
 ---
 
 ## Phase 4 — msgspec Integration
 
-**Goal:** Handlers declare typed inputs and outputs; msgspec validates and serializes.
+**Goal:** Typed request/response bodies with automatic validation and serialization.
 
-### Step 4.1 — Typed request bodies
+### 4.1 — Typed request bodies
+
+Inspect handler signature, find `msgspec.Struct` parameters, decode request body automatically:
 
 ```python
-import msgspec
-
 class CreateUser(msgspec.Struct):
     name: str
     age: int
 
-@app.route("/users", methods=["POST"])
-async def create_user(request: Request, body: CreateUser) -> dict:
+@app.post("/users")
+async def create_user(request: Request, body: CreateUser) -> Response:
+    # body is already validated and typed
     ...
 ```
 
-The framework inspects the handler signature with `inspect.get_annotations()`, sees `body: CreateUser` where `CreateUser` is a `msgspec.Struct` subclass, reads the request body, and calls `msgspec.json.decode(raw_body, type=CreateUser)`. Validation errors from msgspec become 422 responses automatically.
+The framework calls `msgspec.json.decode(raw_body, type=CreateUser)`. Validation errors become 422 responses.
 
-### Step 4.2 — Typed responses
+### 4.2 — Typed responses
 
-If the handler return type annotation is a `msgspec.Struct`, the framework calls `msgspec.json.encode(result)` and sets `Content-Type: application/json`.
-
-### Step 4.3 — Why msgspec over Pydantic
-
-`msgspec` uses a compiled C extension for JSON decode+validate in a single pass. Benchmarks show 2-10x faster than Pydantic v2. It also has zero runtime dependencies. The `msgspec.Struct` type carries field metadata that is directly usable for schema generation in Phase 6.
-
----
-
-## Phase 5 — Dependency Injection
-
-**Goal:** Handlers declare their dependencies as typed parameters; the framework resolves them.
-
-### Step 5.1 — What dependency injection is here
-
-FastAPI's `Depends()` system at its core is just:
-1. Inspect the handler's signature with `inspect.signature()`.
-2. For each parameter, determine its source: path param, query param, header, body, or a sub-dependency.
-3. Resolve each source from the request and pass the resolved value to the handler.
-
-You do not need a DI container library. `inspect` is sufficient.
-
-### Step 5.2 — Parameter resolution strategy
-
-```
-handler parameter name in path pattern  ->  path param (coerce to annotated type)
-parameter type is a msgspec.Struct      ->  parse request body
-parameter name in query string          ->  query param (coerce to annotated type)
-parameter type is Request               ->  inject raw request
-```
-
-### Step 5.3 — `Depends()` for reusable dependencies
+If handler returns a `msgspec.Struct`, the framework encodes it to JSON automatically:
 
 ```python
-def Depends(dependency: Callable):
-    # Returns a marker object that the resolver recognises
-    return DependsMarker(dependency)
-```
-
-When the resolver encounters a `DependsMarker`, it calls `dependency()` recursively with the same resolution logic. This is exactly what FastAPI does — no magic.
-
-### Step 5.4 — Implementation skeleton
-
-```python
-import inspect
-
-async def resolve_handler(handler, request, path_params):
-    sig = inspect.signature(handler)
-    kwargs = {}
-    for name, param in sig.parameters.items():
-        annotation = param.annotation
-        if name in path_params:
-            kwargs[name] = annotation(path_params[name]) if annotation != inspect.Parameter.empty else path_params[name]
-        elif annotation == Request:
-            kwargs[name] = request
-        elif isinstance(param.default, DependsMarker):
-            kwargs[name] = await resolve_handler(param.default.dependency, request, path_params)
-        elif issubclass(annotation, msgspec.Struct):
-            raw = await request.body()
-            kwargs[name] = msgspec.json.decode(raw, type=annotation)
-        # ... query params, headers, etc.
-    return await handler(**kwargs)
-```
-
----
-
-## Phase 6 — Auto Schema Generation
-
-**Goal:** `/openapi.json` generated entirely from type annotations, no decorators needed.
-
-### Step 6.1 — What you need to generate
-
-OpenAPI 3.1 schema is a JSON document. For each route, you need:
-- Path, method, operation ID
-- Path parameters (name, type)
-- Request body schema (if handler has a `msgspec.Struct` body param)
-- Response schema (from return type annotation)
-
-### Step 6.2 — msgspec schema introspection
-
-`msgspec` provides `msgspec.json.schema()` which generates a JSON Schema dict from any `Struct` type:
-
-```python
-import msgspec.json
-
-class CreateUser(msgspec.Struct):
+class UserResponse(msgspec.Struct):
+    id: int
     name: str
-    age: int
 
-schema = msgspec.json.schema(CreateUser)
-# {"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}}, ...}
+@app.get("/users/{user_id:int}")
+async def get_user(request: Request, user_id: int) -> UserResponse:
+    return UserResponse(id=user_id, name="Alice")
+    # -> {"id": 1, "name": "Alice"} with Content-Type: application/json
 ```
 
-This is the hard part of schema generation solved for free by msgspec.
+### 4.3 — Why msgspec
 
-### Step 6.3 — Schema assembly
-
-Walk `self._routes` at startup (or lazily on first `/openapi.json` request), inspect each handler's signature, and assemble the OpenAPI dict. Serve it as JSON. Then serve a `/docs` route that returns a static HTML page loading Swagger UI or Scalar from a CDN.
+`msgspec` decodes + validates in a single C-extension pass. 2-10x faster than Pydantic v2. Zero runtime dependencies. `msgspec.json.schema()` generates JSON Schema from any Struct — feeds directly into OpenAPI generation later.
 
 ---
 
-## Phase 7 — Middleware (ASGI-native)
+## Phase 5 — Middleware (ASGI-native)
 
-ASGI middleware is simpler than WSGI middleware. A middleware is just an ASGI app that wraps another ASGI app:
+**Goal:** Composable middleware via the standard ASGI wrapper pattern.
+
+An ASGI middleware wraps another ASGI app:
 
 ```python
-class LoggingMiddleware:
+class CORSMiddleware:
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        print(f"{scope['method']} {scope['path']}")
+        # modify scope, intercept send, etc.
         await self.app(scope, receive, send)
 ```
 
-No base class needed. No special protocol. Just `__init__(self, app)` and `async __call__(self, scope, receive, send)`.
+No base class needed. `app.add_middleware(CORSMiddleware)` wraps the app at startup.
+
+Key middleware to ship: error handling (500 responses), CORS, request logging.
 
 ---
 
-## Phase 8 — Test Client
+## Phase 6 — Dependency Injection
 
-Replace `requests` + `requests-wsgi-adapter` with `httpx.ASGITransport`:
+**Goal:** Handlers declare dependencies as typed parameters; the framework resolves them via `inspect.signature()`.
 
-```python
-def test_client(self) -> httpx.AsyncClient:
-    return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=self),
-        base_url="http://testserver",
-    )
+### Resolution strategy
+
+```
+parameter name in path pattern     -> path param (coerce to annotated type)
+parameter type is msgspec.Struct   -> parse request body
+parameter name in query string     -> query param (coerce to annotated type)
+parameter type is Request          -> inject raw request
+parameter default is Depends(fn)   -> resolve sub-dependency recursively
 ```
 
-Tests become:
+### Depends()
+
 ```python
-async def test_home(app):
-    async with app.test_client() as client:
-        response = await client.get("/home")
-        assert response.status_code == 200
+def Depends(dependency: Callable):
+    return DependsMarker(dependency)
 ```
 
-Use `anyio.pytest_plugin` so tests run on both asyncio and trio backends.
+When the resolver encounters a `DependsMarker`, it calls the dependency with the same resolution logic recursively. Same pattern as FastAPI.
 
 ---
 
-## File Structure After Rewrite
+## Phase 7 — OpenAPI Generation
+
+**Goal:** `/openapi.json` generated entirely from type annotations.
+
+For each route, extract:
+- Path, method, operation ID
+- Path parameters (from `compile_path`)
+- Request body schema (from `msgspec.Struct` param via `msgspec.json.schema()`)
+- Response schema (from return type annotation)
+
+Serve `/docs` with Swagger UI or Scalar loaded from CDN.
+
+---
+
+## Phase 8 — Templates + Static Files
+
+**Goal:** Jinja2 template rendering and static file serving.
+
+- `app.template("home.html", context={...})` returning a `Response`
+- Static file serving as an ASGI app mounted at a prefix
+- Already have `jinja2` as a dependency
+
+---
+
+## Phase 9 — WSGI Compatibility Bridge
+
+**Goal:** Accept a legacy WSGI callable and run it inside the async framework via `anyio.to_thread.run_sync()`.
+
+Low priority — only needed if someone wants to mount a Flask/Django app inside Oberoon. Useful as a learning exercise for understanding the WSGI/ASGI boundary.
+
+---
+
+## File Structure
 
 ```
 oberoon/
-    __init__.py          # exports: Oberoon, Request, Response, Depends
-    app.py               # Oberoon class: __call__, route(), add_middleware()
-    routing.py           # compile_path(), Route, find_handler()
-    requests_.py         # Request class
-    responses.py         # Response class
-    middleware.py        # base middleware helpers
-    wsgi.py              # WSGIMiddleware (anyio bridge)
-    di.py                # Depends(), resolve_handler()
-    schema.py            # OpenAPI generation
-    exceptions.py        # HTTPException, validation error handling
+    __init__.py          # exports: Oberoon, Request, Response, Router
+    core.py              # Oberoon class: __call__, route(), include_router()
+    routing/
+        __init__.py      # re-exports
+        routing.py       # Route, Router, RoutingMixin, compile_path()
+    requests/
+        __init__.py
+        request.py       # Request class
+    responses/
+        __init__.py
+        response.py      # Response class, build_response()
+    logging.py           # structured stdout logging
+    exceptions.py        # NotFoundException, MethodNotAllowedException
+    serialization.py     # msgspec integration (Phase 4)
+    middleware.py         # middleware helpers (Phase 5)
+    di.py                # Depends(), resolve_handler() (Phase 6)
+    schema.py            # OpenAPI generation (Phase 7)
 ```
-
----
-
-## Build Order
-
-| Phase | Deliverable | Test it by |
-|-------|------------|------------|
-| 0 | Read ASGI spec + run 20-line ASGI app | `uvicorn` + `curl` |
-| 1 | `Request`, `Response`, `Oberoon.__call__` | `httpx.ASGITransport` in pytest |
-| 2 | Regex router, `@route()` decorator | Route to handlers, check 404/405 |
-| 3 | WSGI bridge via `anyio.to_thread.run_sync` | Wrap a tiny Flask app and call it |
-| 4 | msgspec body decode, typed responses | POST with JSON body |
-| 5 | Dependency injection via `inspect` | Inject path params, body, sub-deps |
-| 6 | OpenAPI schema at `/openapi.json` | Check against https://editor.swagger.io |
-| 7 | ASGI middleware | Add a logging middleware |
-| 8 | Lifespan events (startup/shutdown hooks) | Connect to a DB on startup |
 
 ---
 
 ## Resources
 
-### Must read (the spec and the protocol)
-- **ASGI spec** — https://asgi.readthedocs.io/en/latest/ — the ground truth for everything you are implementing
-- **PEP 3333** — WSGI spec — understand what you are bridging from
-- **anyio docs** — https://anyio.readthedocs.io — task groups, thread bridge, backend abstraction
+### The spec
+- **ASGI spec** — https://asgi.readthedocs.io/en/latest/
+- **anyio docs** — https://anyio.readthedocs.io
 
-### Must read (understand what's under your dependencies)
-- **h11 README** — https://h11.readthedocs.io — how raw HTTP/1.1 bytes become structured data; what uvicorn does before calling you
-- **uvicorn source, `protocols/http/h11_impl.py`** — https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/http/h11_impl.py — ~400 lines showing exactly how ASGI messages are produced from TCP
-- **msgspec docs** — https://jcristharif.com/msgspec/ — Struct, JSON decode/encode, schema generation
-- **msgspec benchmarks** — https://jcristharif.com/msgspec/benchmarks.html — why it beats Pydantic v2
+### Understand the internals
+- **h11** — https://h11.readthedocs.io — what uvicorn does before calling you
+- **uvicorn h11_impl.py** — https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/http/h11_impl.py
+- **msgspec docs** — https://jcristharif.com/msgspec/
 
-### Read the source of what you are building toward
-- **Starlette routing** — https://github.com/encode/starlette/blob/master/starlette/routing.py — ~600 lines; how routes compile, how middleware wraps, how lifespan works
-- **Starlette requests** — https://github.com/encode/starlette/blob/master/starlette/requests.py — how scope/receive become a usable Request object
-- **FastAPI dependency injection** — https://github.com/fastapi/fastapi/blob/master/fastapi/dependencies/utils.py — the real implementation; complex but the concepts are all in Phase 5 above
-- **FastAPI schema generation** — https://github.com/fastapi/fastapi/blob/master/fastapi/openapi/utils.py
+### Reference implementations
+- **Starlette routing** — https://github.com/encode/starlette/blob/master/starlette/routing.py
+- **FastAPI DI** — https://github.com/fastapi/fastapi/blob/master/fastapi/dependencies/utils.py
+- **FastAPI OpenAPI** — https://github.com/fastapi/fastapi/blob/master/fastapi/openapi/utils.py
 
-### Background reading
-- **"How Python ASGI Works"** — https://www.encode.io/articles/working-with-http-connections-in-ASGI — by Tom Christie (Starlette author)
-- **OpenAPI 3.1 spec** — https://spec.openapis.org/oas/v3.1.0 — what `/openapi.json` must conform to
-- **JSON Schema** — https://json-schema.org/understanding-json-schema/ — the format msgspec generates for your types
-
-### With Claude
-When building each phase, share the actual code you wrote and ask "what is wrong with this implementation of X". Do not ask "how do I implement X" — write it first, even if wrong, then debug together. You will understand it far better. Specifically useful phases to do this on: the WSGI bridge (step 3), the dependency resolver (step 5), and the OpenAPI assembler (step 6).
+### Specs for later phases
+- **OpenAPI 3.1** — https://spec.openapis.org/oas/v3.1.0
+- **JSON Schema** — https://json-schema.org/understanding-json-schema/
+- **PEP 3333 (WSGI)** — for the Phase 9 bridge

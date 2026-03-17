@@ -38,7 +38,10 @@ class Oberoon(RoutingMixin):
             )
             self._routes.append(route)
             logger.warning(
-                "route registered: %s %s -> %s", methods, path, handler.__name__
+                "route registered: %s %s -> %s",
+                methods,
+                path,
+                getattr(handler, "__name__", repr(handler)),
             )
             return handler
 
@@ -58,7 +61,7 @@ class Oberoon(RoutingMixin):
                 "route include regged: %s %s -> %s",
                 route.pattern,
                 route.param_types,
-                route.handler.__name__,
+                getattr(route.handler, "__name__", repr(route.handler)),
             )
 
         for subrouter in router._subrouters:

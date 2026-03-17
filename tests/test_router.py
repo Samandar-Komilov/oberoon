@@ -138,7 +138,7 @@ class TestRouterEmptyPrefix:
 
         app.include_router(router)
 
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx.ASGITransport(app=app)  # type: ignore
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
             yield c
 
