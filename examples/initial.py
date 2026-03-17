@@ -1,4 +1,4 @@
-from oberoon import Oberoon, Request, Response
+from oberoon import Oberoon, Request, Response, Router
 
 from examples.routers import users_router
 
@@ -19,4 +19,16 @@ async def hello2(request: Request, id: int) -> Response:
     return response
 
 
-app.include_router(users_router)
+v1Router = Router(prefix="/v1")
+
+
+@v1Router.get("/health")
+async def health(request: Request) -> Response:
+    response = Response(200)
+    response.set_body(b"ok", content_type="text/plain")
+    return response
+
+
+v1Router.include_router(users_router)
+
+app.include_router(v1Router)

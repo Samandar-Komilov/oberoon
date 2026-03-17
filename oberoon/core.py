@@ -37,16 +37,16 @@ class Oberoon(RoutingMixin):
                 methods=methods or ["GET"],
             )
             self._routes.append(route)
-            logger.debug(
+            logger.warning(
                 "route registered: %s %s -> %s", methods, path, handler.__name__
             )
             return handler
 
         return decorator
 
-    def include_router(self, router: Router):
+    def include_router(self, router: Router, prefix: str = ""):
         for record in router._route_records:
-            pattern, param_types = compile_path(router.prefix + record.path)
+            pattern, param_types = compile_path(prefix + router.prefix + record.path)
             route = Route(
                 pattern=pattern,
                 param_types=param_types,
@@ -54,12 +54,15 @@ class Oberoon(RoutingMixin):
                 methods=record.methods,
             )
             self._routes.append(route)
-            logger.debug(
-                "route registered: %s %s -> %s",
+            logger.warning(
+                "route include regged: %s %s -> %s",
                 route.pattern,
                 route.param_types,
                 route.handler.__name__,
             )
+
+        for subrouter in router._subrouters:
+            self.include_router(subrouter, prefix + router.prefix)
 
     async def handle_request(self, request: Request) -> Response:
         try:
