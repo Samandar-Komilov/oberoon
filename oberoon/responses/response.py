@@ -1,4 +1,6 @@
-from typing import Callable
+from typing import Any, Callable
+
+import msgspec.json
 
 
 class Response:
@@ -41,11 +43,19 @@ class Response:
         return self._body
 
 
-def build_response(
-    status_code: int = 200,
-    body: bytes = b"",
-    content_type: str = "text/plain",
-) -> Response:
-    response = Response(status_code)
-    response.set_body(body, content_type)
-    return response
+class JSONResponse(Response):
+    def __init__(self, content: Any, status_code: int = 200):
+        super().__init__(status_code)
+        self.set_body(msgspec.json.encode(content), "application/json")
+
+
+class TextResponse(Response):
+    def __init__(self, content: str, status_code: int = 200):
+        super().__init__(status_code)
+        self.set_body(content.encode("utf-8"), "text/plain; charset=utf-8")
+
+
+class HTMLResponse(Response):
+    def __init__(self, content: str, status_code: int = 200):
+        super().__init__(status_code)
+        self.set_body(content.encode("utf-8"), "text/html; charset=utf-8")

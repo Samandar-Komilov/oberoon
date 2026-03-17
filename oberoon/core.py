@@ -2,8 +2,12 @@ from typing import Callable
 
 from oberoon.logging import get_logger
 from oberoon.requests import Request
-from oberoon.responses import Response, build_response
-from oberoon.exceptions import NotFoundException, MethodNotAllowedException
+from oberoon.responses import Response, JSONResponse
+from oberoon.exceptions import (
+    HTTPException,
+    NotFoundException,
+    MethodNotAllowedException,
+)
 from oberoon.routing import Route, Router, RoutingMixin, compile_path
 
 logger = get_logger("core")
@@ -72,23 +76,24 @@ class Oberoon(RoutingMixin):
             route, path_params = await self.find_handler(request.method, request.path)
         except NotFoundException:
             logger.warning("404 %s %s", request.method, request.path)
-            response = build_response(
-                status_code=404,
-                content_type="application/json",
-                body=b'{"error": "Not Found"}',
-            )
-            return response
+            return JSONResponse({"error": "Not Found"}, status_code=404)
         except MethodNotAllowedException:
             logger.warning("405 %s %s", request.method, request.path)
-            response = build_response(
-                status_code=405,
-                content_type="application/json",
-                body=b'{"error": "Method Not Allowed"}',
-            )
-            return response
+            return JSONResponse({"error": "Method Not Allowed"}, status_code=405)
 
         converted_params = {k: route.param_types[k](v) for k, v in path_params.items()}
-        response = await route.handler(request, **converted_params)
+
+        try:
+            response = await route.handler(request, **converted_params)
+        except HTTPException as exc:
+            logger.warning(
+                "%d %s %s: %s",
+                exc.status_code,
+                request.method,
+                request.path,
+                exc.detail,
+            )
+            return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
 
         logger.info("%s %s -> %d", request.method, request.path, response.status_code)
 

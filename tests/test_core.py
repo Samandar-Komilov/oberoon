@@ -59,3 +59,21 @@ class TestErrorResponses:
     async def test_405_on_post_to_get_only(self, client):
         resp = await client.post("/hello")
         assert resp.status_code == 405
+
+
+class TestHTTPException:
+    async def test_403_with_detail(self, client):
+        resp = await client.get("/forbidden")
+        assert resp.status_code == 403
+        assert resp.json() == {"error": "Access denied"}
+        assert resp.headers["content-type"] == "application/json"
+
+    async def test_418_custom_status(self, client):
+        resp = await client.get("/teapot")
+        assert resp.status_code == 418
+        assert resp.json() == {"error": "I'm a teapot"}
+
+    async def test_no_detail(self, client):
+        resp = await client.get("/no-detail")
+        assert resp.status_code == 500
+        assert resp.json() == {"error": ""}

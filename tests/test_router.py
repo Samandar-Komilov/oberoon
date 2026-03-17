@@ -2,7 +2,7 @@ import pytest
 import httpx
 
 from oberoon import Oberoon, Request, Response, Router
-from oberoon.responses import build_response
+from oberoon.responses import TextResponse, JSONResponse
 
 pytestmark = pytest.mark.anyio
 
@@ -18,35 +18,26 @@ def app_with_router():
     # Direct route on app
     @app.get("/health")
     async def health(request: Request) -> Response:
-        return build_response(body=b"ok")
+        return TextResponse("ok")
 
     # Router with prefix
     router = Router(prefix="/api")
 
     @router.get("/items")
     async def list_items(request: Request) -> Response:
-        return build_response(
-            body=b'["item1","item2"]', content_type="application/json"
-        )
+        return JSONResponse(["item1", "item2"])
 
     @router.post("/items")
     async def create_item(request: Request) -> Response:
-        return build_response(
-            status_code=201, body=b'{"created": true}', content_type="application/json"
-        )
+        return JSONResponse({"created": True}, status_code=201)
 
     @router.get("/items/{item_id:int}")
     async def get_item(request: Request, item_id: int) -> Response:
-        return build_response(
-            body=f'{{"id": {item_id}}}'.encode(), content_type="application/json"
-        )
+        return JSONResponse({"id": item_id})
 
     @router.get("/items/{item_id:int}/details/{section}")
     async def get_item_detail(request: Request, item_id: int, section: str) -> Response:
-        return build_response(
-            body=f'{{"id": {item_id}, "section": "{section}"}}'.encode(),
-            content_type="application/json",
-        )
+        return JSONResponse({"id": item_id, "section": section})
 
     app.include_router(router)
     return app
@@ -134,7 +125,7 @@ class TestRouterEmptyPrefix:
 
         @router.get("/things")
         async def things(request: Request) -> Response:
-            return build_response(body=b"things")
+            return TextResponse("things")
 
         app.include_router(router)
 
@@ -161,11 +152,11 @@ class TestMultipleRouters:
 
         @api_router.get("/data")
         async def api_data(request: Request) -> Response:
-            return build_response(body=b"api_data")
+            return TextResponse("api_data")
 
         @admin_router.get("/data")
         async def admin_data(request: Request) -> Response:
-            return build_response(body=b"admin_data")
+            return TextResponse("admin_data")
 
         app.include_router(api_router)
         app.include_router(admin_router)
@@ -196,7 +187,7 @@ class TestRouterIncludedTwice:
 
         @router.get("/ping")
         async def ping(request: Request) -> Response:
-            return build_response(body=b"pong")
+            return TextResponse("pong")
 
         app.include_router(router)
         # Include same router again with different prefix
@@ -204,7 +195,7 @@ class TestRouterIncludedTwice:
 
         @router2.get("/ping")
         async def ping2(request: Request) -> Response:
-            return build_response(body=b"pong2")
+            return TextResponse("pong2")
 
         app.include_router(router2)
 
@@ -230,7 +221,7 @@ class TestRouterMethodsOnly:
 
         @router.post("/webhook")
         async def webhook(request: Request) -> Response:
-            return build_response(status_code=202, body=b"accepted")
+            return TextResponse("accepted", status_code=202)
 
         app.include_router(router)
 

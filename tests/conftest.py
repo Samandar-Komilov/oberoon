@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from oberoon import Oberoon, Request, Response
+from oberoon import Oberoon, HTTPException, Request, Response
 
 
 @pytest.fixture
@@ -40,6 +40,18 @@ def app():
         response = Response(200)
         response.set_body(request.method.encode(), content_type="text/plain")
         return response
+
+    @app.get("/forbidden")
+    async def forbidden(request: Request) -> Response:
+        raise HTTPException(403, "Access denied")
+
+    @app.get("/teapot")
+    async def teapot(request: Request) -> Response:
+        raise HTTPException(418, "I'm a teapot")
+
+    @app.get("/no-detail")
+    async def no_detail(request: Request) -> Response:
+        raise HTTPException(500)
 
     return app
 
