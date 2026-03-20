@@ -1,4 +1,4 @@
-from oberoon import Oberoon, Request, Response, Router
+from oberoon import Oberoon, Request, Router, TextResponse
 
 from examples.routers import users_router
 
@@ -6,27 +6,21 @@ app = Oberoon()
 
 
 @app.get("/hello")
-async def hello(request: Request) -> Response:
-    response = Response(200)
-    response.set_body(b"Hello!", content_type="text/plain")
-    return response
+async def hello(request: Request) -> TextResponse:
+    return TextResponse("Hello!")
 
 
 @app.get("/hello/{id}")
-async def hello2(request: Request, id: int) -> Response:
-    response = Response(200)
-    response.set_body(b"Hello 1!", content_type="text/plain")
-    return response
+async def hello2(request: Request, id: int) -> dict:
+    return {"message": "Hello!", "id": id}
 
 
 v1Router = Router(prefix="/v1")
 
 
 @v1Router.get("/health")
-async def health(request: Request) -> Response:
-    response = Response(200)
-    response.set_body(b"ok", content_type="text/plain")
-    return response
+async def health(request: Request) -> dict:
+    return {"status": "ok"}
 
 
 v1Router.include_router(users_router)

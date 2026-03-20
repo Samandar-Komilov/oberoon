@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
-from typing import Callable
+from typing import Any, Callable
 
 
 @dataclass
@@ -11,6 +11,10 @@ class Route:
     param_types: dict[str, type]
     handler: Callable
     methods: list[str]
+    # msgspec integration fields (populated by inspect_handler)
+    body_param: str | None = None
+    body_type: type | None = None
+    return_type: Any = field(default=None)
 
 
 @dataclass
