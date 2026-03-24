@@ -1,11 +1,28 @@
-# Oberoon
+<p align="center">
+  <img src="https://dev-to-uploads.s3.amazonaws.com/uploads/articles/e45a6pyzm3gydx78hgm7.png" alt="oberoon" width="600">
+</p>
 
-![purpose](https://img.shields.io/badge/purpose-learning-green)
-![PyPI - Version](https://img.shields.io/pypi/v/oberoon)
+<h1 align="center">Oberoon</h1>
 
-A lightweight ASGI web framework for Python, inspired by Starlette and FastAPI. Built from scratch as a learning project to understand the internals of modern async web frameworks.
+<p align="center">
+  <strong>A lightweight ASGI web framework for Python, inspired by Starlette and FastAPI.</strong><br>
+  Built from scratch as a learning project to understand the internals of modern async web frameworks.
+</p>
 
-**Source code**: https://github.com/Samandar-Komilov/oberoon
+<p align="center">
+  <a href="https://pypi.org/project/oberoon/"><img src="https://img.shields.io/pypi/v/oberoon?color=blue&label=PyPI" alt="PyPI"></a>
+  <a href="https://github.com/Samandar-Komilov/oberoon/actions"><img src="https://img.shields.io/github/actions/workflow/status/Samandar-Komilov/oberoon/ci.yaml?label=CI" alt="CI"></a>
+  <a href="https://github.com/Samandar-Komilov/oberoon/blob/master/LICENSE"><img src="https://img.shields.io/github/license/Samandar-Komilov/oberoon?color=green" alt="License"></a>
+  <img src="https://img.shields.io/badge/python-3.12%2B-blue" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/purpose-learning-green" alt="Purpose: Learning">
+  <a href="https://github.com/Samandar-Komilov/oberoon"><img src="https://img.shields.io/github/stars/Samandar-Komilov/oberoon?style=social" alt="GitHub Stars"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Samandar-Komilov/oberoon">Source Code</a> &middot;
+  <a href="https://github.com/Samandar-Komilov/oberoon/blob/master/CHANGELOG.md">Changelog</a> &middot;
+  <a href="https://pypi.org/project/oberoon/">PyPI</a>
+</p>
 
 ## Features
 
