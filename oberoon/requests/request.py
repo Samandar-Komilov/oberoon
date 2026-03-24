@@ -1,3 +1,5 @@
+from urllib.parse import parse_qs
+
 import msgspec
 
 
@@ -17,6 +19,12 @@ class Request:
     @property
     def query_string(self) -> str:
         return self._scope["query_string"].decode()
+
+    @property
+    def query_params(self) -> dict[str, str]:
+        """Parse query string into {key: last_value} dict."""
+        parsed = parse_qs(self._scope["query_string"].decode(), keep_blank_values=True)
+        return {key: val[-1] for key, val in parsed.items()}
 
     @property
     def headers(self) -> dict[str, str]:

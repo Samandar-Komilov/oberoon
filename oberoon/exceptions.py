@@ -1,3 +1,9 @@
+from oberoon.requests import Request
+from oberoon.responses import JSONResponse, Response
+
+# Classes
+
+
 class HTTPException(Exception):
     def __init__(self, status_code: int, detail: str = ""):
         self.status_code = status_code
@@ -24,3 +30,28 @@ class ValidationError(HTTPException):
         self.errors = errors
         detail = "; ".join(e.get("msg", "") for e in errors)
         super().__init__(status_code=422, detail=detail)
+
+
+# Handlers
+
+
+def default_validation_handler(request: Request, exc: ValidationError) -> Response:
+    return JSONResponse(
+        {"error": "Validation Error", "detail": exc.errors},
+        status_code=422,
+    )
+
+
+def default_http_handler(request: Request, exc: HTTPException) -> Response:
+    return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+
+def default_error_handler(request: Request, exc: Exception) -> Response:
+    return JSONResponse({"error": "Internal Server Error"}, status_code=500)
+
+
+def debug_error_handler(request: Request, exc: Exception) -> Response:
+    return JSONResponse(
+        {"error": "Internal Server Error", "detail": f"{type(exc).__name__}: {exc}"},
+        status_code=500,
+    )

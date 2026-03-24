@@ -5,7 +5,15 @@ from typing import Annotated
 import httpx
 import pytest
 
-from oberoon import Oberoon, Model, Field, Request, Response, JSONResponse, TextResponse
+from oberoon import (
+    Oberoon,
+    BaseModel,
+    Field,
+    Request,
+    Response,
+    JSONResponse,
+    TextResponse,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -13,19 +21,19 @@ pytestmark = pytest.mark.anyio
 # ── Models ──────────────────────────────────────────────────────────────────
 
 
-class CreateUser(Model):
+class CreateUser(BaseModel):
     name: str
     email: str
     age: int = 0
 
 
-class UserResponse(Model):
+class UserResponse(BaseModel):
     id: int
     name: str
     email: str
 
 
-class ConstrainedModel(Model):
+class ConstrainedModel(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=50)]
     score: Annotated[int, Field(ge=0, le=100)]
 
@@ -50,11 +58,6 @@ def app():
     # Return a dict with typed return annotation
     @app.get("/dict-typed")
     async def dict_typed(request: Request) -> dict:
-        return {"key": "value"}
-
-    # Return a dict without return annotation → should warn
-    @app.get("/dict-untyped")
-    async def dict_untyped(request: Request):
         return {"key": "value"}
 
     # Return a list with typed annotation
@@ -116,11 +119,13 @@ class TestAutoResponse:
         assert resp.status_code == 200
         assert resp.json() == {"key": "value"}
 
-    async def test_dict_untyped_warns(self, client):
-        with pytest.warns(UserWarning, match="return type"):
-            resp = await client.get("/dict-untyped")
-        assert resp.status_code == 200
-        assert resp.json() == {"key": "value"}
+    async def test_untyped_handler_rejected_at_registration(self):
+        app = Oberoon()
+        with pytest.raises(TypeError, match="return type"):
+
+            @app.get("/untyped")
+            async def untyped(request: Request):
+                return {"key": "value"}
 
     async def test_list_of_structs(self, client):
         resp = await client.get("/users-list")
