@@ -15,6 +15,8 @@ class Route:
     body_param: str | None = None
     body_type: type | None = None
     return_type: Any = field(default=None)
+    query_params: dict[str, tuple[type, Any]] = field(default_factory=dict)
+    header_params: dict[str, tuple[type, str, Any]] = field(default_factory=dict)
 
 
 @dataclass

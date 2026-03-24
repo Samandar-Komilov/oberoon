@@ -10,7 +10,12 @@ from oberoon.exceptions import (
     ValidationError,
 )
 from oberoon.routing import Route, Router, RoutingMixin, compile_path
-from oberoon.serialization import inspect_handler, decode_body, process_response
+from oberoon.serialization import (
+    REQUIRED,
+    inspect_handler,
+    decode_body,
+    process_response,
+)
 
 logger = get_logger("core")
 
@@ -36,8 +41,8 @@ class Oberoon(RoutingMixin):
     def route(self, path: str, methods: list[str] | None = None):
         def decorator(handler):
             pattern, param_types = compile_path(path)
-            body_param, body_type, return_type = inspect_handler(
-                handler, set(param_types.keys())
+            body_param, body_type, return_type, query_params, header_params = (
+                inspect_handler(handler, set(param_types.keys()))
             )
             route = Route(
                 pattern=pattern,
@@ -47,6 +52,8 @@ class Oberoon(RoutingMixin):
                 body_param=body_param,
                 body_type=body_type,
                 return_type=return_type,
+                query_params=query_params,
+                header_params=header_params,
             )
             self._routes.append(route)
             logger.warning(
@@ -62,8 +69,8 @@ class Oberoon(RoutingMixin):
     def include_router(self, router: Router, prefix: str = ""):
         for record in router._route_records:
             pattern, param_types = compile_path(prefix + router.prefix + record.path)
-            body_param, body_type, return_type = inspect_handler(
-                record.handler, set(param_types.keys())
+            body_param, body_type, return_type, query_params, header_params = (
+                inspect_handler(record.handler, set(param_types.keys()))
             )
             route = Route(
                 pattern=pattern,
@@ -73,6 +80,8 @@ class Oberoon(RoutingMixin):
                 body_param=body_param,
                 body_type=body_type,
                 return_type=return_type,
+                query_params=query_params,
+                header_params=header_params,
             )
             self._routes.append(route)
             logger.warning(
@@ -95,7 +104,111 @@ class Oberoon(RoutingMixin):
             logger.warning("405 %s %s", request.method, request.path)
             return JSONResponse({"error": "Method Not Allowed"}, status_code=405)
 
-        converted_params = {k: route.param_types[k](v) for k, v in path_params.items()}
+        # Convert path parameters
+        try:
+            converted_params = {
+                k: route.param_types[k](v) for k, v in path_params.items()
+            }
+        except (ValueError, TypeError) as exc:
+            return JSONResponse(
+                {
+                    "error": "Validation Error",
+                    "detail": [
+                        {
+                            "loc": ["path"],
+                            "msg": str(exc),
+                            "type": "validation_error",
+                        }
+                    ],
+                },
+                status_code=422,
+            )
+
+        # Extract and validate query parameters
+        if route.query_params:
+            raw_query = request.query_params
+            for qname, (qtype, qdefault) in route.query_params.items():
+                raw_val = raw_query.get(qname)
+                if raw_val is None:
+                    if qdefault is REQUIRED:
+                        return JSONResponse(
+                            {
+                                "error": "Validation Error",
+                                "detail": [
+                                    {
+                                        "loc": ["query", qname],
+                                        "msg": "Missing required query parameter",
+                                        "type": "missing",
+                                    }
+                                ],
+                            },
+                            status_code=422,
+                        )
+                    converted_params[qname] = qdefault
+                else:
+                    try:
+                        if qtype is bool:
+                            converted_params[qname] = raw_val.lower() in (
+                                "true",
+                                "1",
+                                "yes",
+                                "on",
+                            )
+                        else:
+                            converted_params[qname] = qtype(raw_val)
+                    except (ValueError, TypeError):
+                        return JSONResponse(
+                            {
+                                "error": "Validation Error",
+                                "detail": [
+                                    {
+                                        "loc": ["query", qname],
+                                        "msg": f"Invalid value for type {qtype.__name__}",
+                                        "type": "validation_error",
+                                    }
+                                ],
+                            },
+                            status_code=422,
+                        )
+
+        # Extract and validate header parameters
+        if route.header_params:
+            req_headers = request.headers
+            for hname, (htype, header_key, hdefault) in route.header_params.items():
+                raw_val = req_headers.get(header_key.lower())
+                if raw_val is None:
+                    if hdefault is ...:
+                        return JSONResponse(
+                            {
+                                "error": "Validation Error",
+                                "detail": [
+                                    {
+                                        "loc": ["header", header_key],
+                                        "msg": "Missing required header",
+                                        "type": "missing",
+                                    }
+                                ],
+                            },
+                            status_code=422,
+                        )
+                    converted_params[hname] = hdefault
+                else:
+                    try:
+                        converted_params[hname] = htype(raw_val)
+                    except (ValueError, TypeError):
+                        return JSONResponse(
+                            {
+                                "error": "Validation Error",
+                                "detail": [
+                                    {
+                                        "loc": ["header", header_key],
+                                        "msg": f"Invalid value for type {htype.__name__}",
+                                        "type": "validation_error",
+                                    }
+                                ],
+                            },
+                            status_code=422,
+                        )
 
         # Decode and validate request body if handler expects a body parameter
         if route.body_param and route.body_type:

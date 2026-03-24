@@ -1,5 +1,6 @@
 import msgspec
 import msgspec.structs
+from msgspec import Meta as Field  # noqa: F401 — re-exported via __init__
 
 
 class Model(msgspec.Struct):

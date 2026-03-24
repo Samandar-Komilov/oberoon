@@ -1,11 +1,20 @@
-"""Tests for msgspec integration: typed request bodies, auto response serialization, validation."""
+"""Tests for msgspec integration: typed request/response, query params, header params."""
 
 from typing import Annotated
 
 import httpx
 import pytest
 
-from oberoon import Oberoon, Model, Field, Request, Response, JSONResponse, TextResponse
+from oberoon import (
+    Oberoon,
+    Model,
+    Field,
+    Header,
+    Request,
+    Response,
+    JSONResponse,
+    TextResponse,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -52,7 +61,7 @@ def app():
     async def dict_typed(request: Request) -> dict:
         return {"key": "value"}
 
-    # Return a dict without return annotation → should warn
+    # Return a dict without return annotation → should just work (no warning)
     @app.get("/dict-untyped")
     async def dict_untyped(request: Request):
         return {"key": "value"}
@@ -90,6 +99,44 @@ def app():
     async def dict_as_struct(request: Request) -> UserResponse:
         return {"id": 42, "name": "Bob", "email": "bob@example.com"}
 
+    # ── Query param routes ──
+
+    @app.get("/items")
+    async def list_items(request: Request, skip: int = 0, limit: int = 10) -> dict:
+        return {"skip": skip, "limit": limit}
+
+    @app.get("/search")
+    async def search(request: Request, q: str = "") -> dict:
+        return {"q": q}
+
+    @app.get("/search-required")
+    async def search_required(request: Request, q: str) -> dict:
+        return {"q": q}
+
+    @app.get("/filter")
+    async def filter_items(
+        request: Request, active: bool = False, score: float = 0.0
+    ) -> dict:
+        return {"active": active, "score": score}
+
+    # ── Header param routes ──
+
+    @app.get("/protected")
+    async def protected(request: Request, x_token: str = Header()) -> dict:
+        return {"token": x_token}
+
+    @app.get("/with-alias")
+    async def with_alias(
+        request: Request, auth: str = Header(alias="authorization")
+    ) -> dict:
+        return {"auth": auth}
+
+    @app.get("/optional-header")
+    async def optional_header(
+        request: Request, x_request_id: str = Header(default="none")
+    ) -> dict:
+        return {"request_id": x_request_id}
+
     return app
 
 
@@ -116,9 +163,9 @@ class TestAutoResponse:
         assert resp.status_code == 200
         assert resp.json() == {"key": "value"}
 
-    async def test_dict_untyped_warns(self, client):
-        with pytest.warns(UserWarning, match="return type"):
-            resp = await client.get("/dict-untyped")
+    async def test_dict_untyped_returns_json(self, client):
+        """No return type → encodes to JSON silently (like FastAPI)."""
+        resp = await client.get("/dict-untyped")
         assert resp.status_code == 200
         assert resp.json() == {"key": "value"}
 
@@ -256,6 +303,105 @@ class TestConstraints:
             json={"name": "Alice", "score": 101},
         )
         assert resp.status_code == 422
+
+
+# ── Query parameter tests ──────────────────────────────────────────────────
+
+
+class TestQueryParams:
+    async def test_defaults_when_absent(self, client):
+        resp = await client.get("/items")
+        assert resp.status_code == 200
+        assert resp.json() == {"skip": 0, "limit": 10}
+
+    async def test_provided_values(self, client):
+        resp = await client.get("/items?skip=5&limit=20")
+        assert resp.status_code == 200
+        assert resp.json() == {"skip": 5, "limit": 20}
+
+    async def test_partial_override(self, client):
+        resp = await client.get("/items?limit=3")
+        assert resp.status_code == 200
+        assert resp.json() == {"skip": 0, "limit": 3}
+
+    async def test_string_query(self, client):
+        resp = await client.get("/search?q=hello+world")
+        assert resp.status_code == 200
+        assert resp.json() == {"q": "hello world"}
+
+    async def test_string_default(self, client):
+        resp = await client.get("/search")
+        assert resp.status_code == 200
+        assert resp.json() == {"q": ""}
+
+    async def test_required_query_missing(self, client):
+        resp = await client.get("/search-required")
+        assert resp.status_code == 422
+        data = resp.json()
+        assert data["error"] == "Validation Error"
+        assert data["detail"][0]["loc"] == ["query", "q"]
+
+    async def test_required_query_provided(self, client):
+        resp = await client.get("/search-required?q=test")
+        assert resp.status_code == 200
+        assert resp.json() == {"q": "test"}
+
+    async def test_wrong_type_422(self, client):
+        resp = await client.get("/items?skip=abc")
+        assert resp.status_code == 422
+        data = resp.json()
+        assert data["detail"][0]["loc"] == ["query", "skip"]
+
+    async def test_bool_true_values(self, client):
+        for val in ("true", "1", "yes", "on"):
+            resp = await client.get(f"/filter?active={val}")
+            assert resp.json()["active"] is True, f"Failed for {val}"
+
+    async def test_bool_false_values(self, client):
+        for val in ("false", "0", "no", "off"):
+            resp = await client.get(f"/filter?active={val}")
+            assert resp.json()["active"] is False, f"Failed for {val}"
+
+    async def test_float_query(self, client):
+        resp = await client.get("/filter?score=3.14")
+        assert resp.status_code == 200
+        assert resp.json()["score"] == pytest.approx(3.14)
+
+
+# ── Header parameter tests ─────────────────────────────────────────────────
+
+
+class TestHeaderParams:
+    async def test_required_header_provided(self, client):
+        resp = await client.get("/protected", headers={"x-token": "secret123"})
+        assert resp.status_code == 200
+        assert resp.json() == {"token": "secret123"}
+
+    async def test_required_header_missing(self, client):
+        resp = await client.get("/protected")
+        assert resp.status_code == 422
+        data = resp.json()
+        assert data["error"] == "Validation Error"
+        assert data["detail"][0]["loc"] == ["header", "x-token"]
+
+    async def test_alias_header(self, client):
+        resp = await client.get("/with-alias", headers={"authorization": "Bearer tok"})
+        assert resp.status_code == 200
+        assert resp.json() == {"auth": "Bearer tok"}
+
+    async def test_alias_header_missing(self, client):
+        resp = await client.get("/with-alias")
+        assert resp.status_code == 422
+
+    async def test_optional_header_provided(self, client):
+        resp = await client.get("/optional-header", headers={"x-request-id": "abc-123"})
+        assert resp.status_code == 200
+        assert resp.json() == {"request_id": "abc-123"}
+
+    async def test_optional_header_default(self, client):
+        resp = await client.get("/optional-header")
+        assert resp.status_code == 200
+        assert resp.json() == {"request_id": "none"}
 
 
 # ── Model helper tests ──────────────────────────────────────────────────────
