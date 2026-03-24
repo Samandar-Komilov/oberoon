@@ -1,6 +1,6 @@
 [project]
 name = "oberoon"
-version = "0.2.0"
+version = "0.3.0"
 description = "A lightweight ASGI web framework for Python, inspired by Starlette"
 readme = "README.md"
 license = { text = "MIT" }

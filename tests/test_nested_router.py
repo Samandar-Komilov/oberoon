@@ -2,7 +2,7 @@ import pytest
 import httpx
 
 from oberoon import Oberoon, Request, Response, Router
-from oberoon.responses import build_response
+from oberoon.responses import TextResponse
 
 pytestmark = pytest.mark.anyio
 
@@ -28,15 +28,15 @@ class TestTwoLevelNesting:
 
         @v1_router.get("/users")
         async def list_users(request: Request) -> Response:
-            return build_response(body=b"v1_users")
+            return TextResponse("v1_users")
 
         @v1_router.get("/users/{user_id:int}")
         async def get_user(request: Request, user_id: int) -> Response:
-            return build_response(body=f"v1_user_{user_id}".encode())
+            return TextResponse(f"v1_user_{user_id}")
 
         @api_router.get("/health")
         async def api_health(request: Request) -> Response:
-            return build_response(body=b"api_ok")
+            return TextResponse("api_ok")
 
         # This requires Router.include_router to exist
         api_router.include_router(v1_router)
@@ -98,11 +98,11 @@ class TestThreeLevelNesting:
 
         @admin_router.get("/dashboard")
         async def dashboard(request: Request) -> Response:
-            return build_response(body=b"admin_dashboard")
+            return TextResponse("admin_dashboard")
 
         @admin_router.delete("/purge")
         async def purge(request: Request) -> Response:
-            return build_response(body=b"purged")
+            return TextResponse("purged")
 
         v1_router.include_router(admin_router)
         api_router.include_router(v1_router)
@@ -148,11 +148,11 @@ class TestSiblingSubrouters:
 
         @v1_router.get("/items")
         async def v1_items(request: Request) -> Response:
-            return build_response(body=b"v1_items")
+            return TextResponse("v1_items")
 
         @v2_router.get("/items")
         async def v2_items(request: Request) -> Response:
-            return build_response(body=b"v2_items")
+            return TextResponse("v2_items")
 
         api_router.include_router(v1_router)
         api_router.include_router(v2_router)
@@ -190,7 +190,7 @@ class TestNestedEmptyPrefix:
 
         @child.get("/ping")
         async def ping(request: Request) -> Response:
-            return build_response(body=b"pong")
+            return TextResponse("pong")
 
         parent.include_router(child)
         app.include_router(parent)
@@ -218,7 +218,7 @@ class TestAllEmptyPrefixes:
 
         @r2.get("/deep")
         async def deep(request: Request) -> Response:
-            return build_response(body=b"deep")
+            return TextResponse("deep")
 
         r1.include_router(r2)
         app.include_router(r1)
@@ -242,19 +242,19 @@ class TestRoutesAtEveryLevel:
 
         @app.get("/app-level")
         async def app_route(request: Request) -> Response:
-            return build_response(body=b"app")
+            return TextResponse("app")
 
         parent = Router(prefix="/parent")
 
         @parent.get("/parent-level")
         async def parent_route(request: Request) -> Response:
-            return build_response(body=b"parent")
+            return TextResponse("parent")
 
         child = Router(prefix="/child")
 
         @child.get("/child-level")
         async def child_route(request: Request) -> Response:
-            return build_response(body=b"child")
+            return TextResponse("child")
 
         parent.include_router(child)
         app.include_router(parent)
@@ -290,7 +290,7 @@ class TestSharedSubrouter:
 
         @shared.get("/resource")
         async def resource(request: Request) -> Response:
-            return build_response(body=b"shared_resource")
+            return TextResponse("shared_resource")
 
         parent_a = Router(prefix="/a")
         parent_b = Router(prefix="/b")
